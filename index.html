@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CAREダイアリー</title>
+</head>
+<body>
+
+<style>
+  /* 画面幅820px超: A4用紙そのままの1枚フォーム / 820px以下: 1日1枚のカード縦並び */
+  :root {
+    --bg:#e6e8e4; --fg:#222; --bar:#2f3a33; --bar-fg:#fff; --btn:#f0b429; --btn-fg:#222;
+    --paper:#fff; --paper-ink:#222; --line:#333; --focus:#fffbe0; --green:#3a9a5b; --muted:#666; --danger:#b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg:#1b1f1c; --bar:#0f1311; --muted:#888; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --bg:#1b1f1c; --bar:#0f1311; --muted:#888; color-scheme: dark; }
+
+  * { box-sizing: border-box; }
+  body { background:var(--bg); color:var(--fg);
+         font-family:"Yu Gothic","Meiryo","Hiragino Sans","Noto Sans JP",sans-serif;
+         padding-left:max(16px, env(safe-area-inset-left, 0px));
+         padding-right:max(16px, env(safe-area-inset-right, 0px));
+         padding-block:0 24px; }
+
+  .bar { display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:10px 0; color:var(--bar-fg); }
+  .bar-in { display:contents; }
+  .bar-bg { position:absolute; inset:0 0 auto; height:56px; background:var(--bar); z-index:-1; }
+  .bar button { font:inherit; font-size:14px; padding:7px 14px; border:0; border-radius:4px; cursor:pointer;
+                background:var(--btn); color:var(--btn-fg); }
+  .bar button.warn { background:var(--danger); color:#fff; }
+  .bar button.ghost { background:#555; color:#fff; }
+  .bar span { font-size:12px; opacity:.85; }
+  .bar-wrap { margin-inline:calc(-1 * max(16px, env(safe-area-inset-left, 0px)));
+              padding-inline:max(16px, env(safe-area-inset-left, 0px)); background:var(--bar); }
+
+  .page { width:210mm; max-width:100%; min-height:297mm; margin:12px auto; background:var(--paper); color:var(--paper-ink);
+          position:relative; padding:8mm 8mm 4mm; box-shadow:0 2px 8px rgba(0,0,0,.3); }
+  .owner { text-align:right; height:9mm; padding-right:6mm; }
+  .owner input { width:70mm; max-width:100%; font:inherit; font-size:16px; text-align:right; border:0; color:inherit;
+                 border-bottom:1px dashed #aaa; background:transparent; padding:2px 4px; }
+  .frame { border:1.2px solid #555; border-radius:10mm; padding:3mm 4mm; position:relative; }
+  h2 { margin:0; font-size:15px; line-height:1.2; }
+  h2 small { font-size:11px; font-weight:normal; display:inline; margin-left:3mm; }
+  h1 { text-align:center; font-size:20px; letter-spacing:.08em; margin:0 0 1mm; line-height:1.2; }
+  .tips { position:relative; border:1px dashed #555; padding:1mm 2mm; font-size:9.5px; line-height:1.35; margin-bottom:2mm; }
+  .tips b.t { display:block; text-align:center; font-size:10.5px; }
+  .tips u { font-weight:bold; }
+
+  table { width:100%; border-collapse:collapse; table-layout:fixed; }
+  th, td { border:1.5px solid var(--line); padding:0; }
+  th { font-size:10px; padding:1mm; height:15mm; vertical-align:middle; line-height:1.35; }
+  th .s { font-weight:normal; font-size:8px; display:block; }
+  tbody tr { break-inside:avoid; }
+  .c-date { width:15.2% } .c-mark { width:9.2% } .c-a { width:26.5% } .c-b { width:26.5% } .c-c { width:22.6% }
+
+  td { position:relative; }
+  td textarea { width:100%; min-height:29mm; border:0; resize:none; overflow:hidden; background:transparent; color:inherit;
+                font:inherit; font-size:12px; line-height:1.4; padding:1.5mm; display:block; outline:none; }
+  td textarea:focus { background:var(--focus); color:#222; }
+
+  .date-cell { text-align:center; cursor:pointer; font-size:16px; white-space:nowrap; }
+  .date-cell .txt { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; gap:4px; }
+  .date-cell .empty { color:#555; }
+  .date-cell:hover { background:var(--focus); color:#222; }
+  .date-cell input { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
+
+  .mark { text-align:center; cursor:pointer; user-select:none; }
+  .mark .o { font-size:22px; line-height:1; display:none; }
+  .mark.on .o { display:block; }
+  .mark input { display:none; }
+  .mark label { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  .mark:hover { background:var(--focus); color:#222; }
+
+  .note { text-align:right; font-size:9px; margin-top:1mm; }
+  .credit { font-size:8px; margin-top:1mm; }
+  .logo { position:absolute; right:2mm; bottom:1mm; font-weight:bold; font-size:11px; color:var(--green); }
+  .logo span { border:1px solid #999; border-radius:8px; padding:1px 10px; font-style:italic; }
+
+  .m-label { display:none; }
+
+  @page { size:A4 portrait; margin:0; }
+  @media print {
+    body { background:#fff; padding:0; }
+    .bar-wrap { display:none; }
+    .page { margin:0; box-shadow:none; min-height:0; }
+    .owner input, td textarea:focus, .date-cell:hover, .mark:hover { background:transparent; }
+    .owner input { border-bottom:0; }
+    * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  }
+
+  /* スマホ: 1日1枚のカード */
+  @media screen and (max-width: 820px) {
+    .page { width:100%; min-height:0; margin:12px 0; padding:14px 12px 16px; box-shadow:none; border-radius:10px; }
+    .owner { height:auto; padding:0 0 10px; }
+    .owner input { width:100%; font-size:18px; border-bottom:1px solid #999; padding:6px 2px; }
+    .frame { border-radius:18px; padding:12px; }
+    h2 { font-size:16px; }
+    h2 small { display:block; margin:4px 0 0; font-size:12px; }
+    h1 { font-size:21px; margin:10px 0; letter-spacing:.04em; }
+    .tips { font-size:12.5px; line-height:1.6; padding:8px 10px 34px; margin-bottom:12px; }
+    .tips b.t { font-size:13.5px; }
+    .logo { right:8px; bottom:6px; font-size:12px; }
+
+    table, tbody, tr, td { display:block; width:100%; }
+    thead, colgroup { display:none; }
+    tbody { display:grid; gap:14px; }
+    tr { border:1.5px solid var(--line); border-radius:12px; padding:10px; display:grid; gap:10px;
+         grid-template-columns:1fr auto; }
+    td { border:0; }
+    td:nth-child(n+3) { grid-column:1 / -1; }
+    .m-label { display:block; font-size:12.5px; font-weight:bold; margin-bottom:4px; }
+    .m-label small { font-weight:normal; color:var(--muted); }
+
+    .date-cell, .mark { height:48px; border:1.5px solid var(--line); border-radius:10px; font-size:18px; }
+    .mark { width:76px; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+    .mark .o { font-size:26px; display:none; }
+    .mark.on .o { display:block; }
+    .mark .tag { position:absolute; left:0; right:0; top:2px; font-size:10px; color:var(--muted); }
+    .mark.on { background:#eaf6ee; }
+    .date-cell .empty { color:#777; }
+
+    td textarea { min-height:7em; font-size:16px; line-height:1.5; padding:8px 10px; resize:none;
+                  border:1.5px solid #bbb; border-radius:10px; }
+    td textarea:focus { border-color:var(--green); }
+    .note { font-size:12px; text-align:left; margin-top:12px; line-height:1.5; }
+    .credit { font-size:10px; margin-top:8px; }
+    .bar span { display:none; }
+  }
+</style>
+
+<div class="bar-wrap">
+  <div class="bar">
+    <button id="print" type="button" onclick="window.print()">PDF・印刷</button>
+    <button id="clear" type="button" class="ghost">全部消す</button>
+    <span id="msg">入力内容はこの端末のブラウザに自動保存されます。</span>
+  </div>
+</div>
+
+<div class="page">
+  <div class="owner"><input id="owner" data-k="owner" placeholder="所属 氏名" autocomplete="off"></div>
+  <div class="frame">
+    <h2>付録のページ：<small>日々の生活の中でCAREをとりいれる際にぜひ使ってみてください</small></h2>
+    <h1>☆★☆ 「CARE」ダイアリー ☆★☆</h1>
+    <div class="tips"><div class="logo"><span>CARE-Japan</span></div>
+      <b class="t">☆CAREのスキルを実際に使ってみましょう☆</b>
+      1日にちょっとでもいいので、機会があったら、子どもにCAREのスキルを使ってみませんか？<br>
+      <u>3つのP</u>（<b>具体的にほめる、子どもの言葉を繰り返す、子どもの行動を言葉にする</b>）を心がけて、<br>
+      <u>3つのK</u>（<b>命令、質問、批判</b>：やめて、だめ、いけない、ちがう、しないで）は控えてみましょう♪
+    </div>
+
+    <table>
+      <colgroup><col class="c-date"><col class="c-mark"><col class="c-a"><col class="c-b"><col class="c-c"></colgroup>
+      <thead><tr>
+        <th>日付<span class="s">（記入して下さい）</span></th>
+        <th>CAREスキル使用日<span class="s">（丸を付ける）</span></th>
+        <th>うまくできたところ<span class="s">（どんなふうに使えましたか？）</span></th>
+        <th>難しかったり、もっとこうしてみたいと思ったところ<span class="s">（今度はこうしたいと思うことなど）</span></th>
+        <th>その他、疑問など<span class="s">（何かあったら書いて下さい）</span></th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+
+    <div class="note">＊全部、記入できなくても大丈夫です。記入してみたいところに自由に記入してみてください。</div>
+    <div class="credit">CARE™ Messer, Gurwitch, Boat, Olafson, Dougherty, Warner-Metzger, Putnam, Connelly, Thieken, &amp; Sharp, 2020</div>
+  </div>
+</div>
+
+<script>
+const ROWS = 7, KEY = "care-diary-v1", DOW = "日月火水木金土";
+let state = {};
+try { state = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
+
+const tbody = document.getElementById("rows");
+for (let i = 0; i < ROWS; i++) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td class="date-cell"><div class="txt"></div><input type="date" data-k="d${i}" aria-label="日付"></td>
+    <td class="mark"><span class="o">○</span><label><input type="checkbox" data-k="m${i}" aria-label="CAREスキルを使った日"></label></td>
+    <td><div class="m-label">うまくできたところ <small>（どんなふうに使えましたか？）</small></div><textarea data-k="a${i}"></textarea></td>
+    <td><div class="m-label">難しかったり、もっとこうしてみたいと思ったところ <small>（今度はこうしたいと思うことなど）</small></div><textarea data-k="b${i}"></textarea></td>
+    <td><div class="m-label">その他、疑問など <small>（何かあったら書いて下さい）</small></div><textarea data-k="c${i}"></textarea></td>`;
+  tbody.appendChild(tr);
+}
+
+function showDate(input) {
+  const txt = input.parentElement.querySelector(".txt");
+  if (!input.value) { txt.innerHTML = '<span class="empty">／(　)</span>'; return; }
+  const [y, m, d] = input.value.split("-").map(Number);
+  const w = DOW[new Date(y, m - 1, d).getDay()];
+  txt.textContent = `${m}/${d}(${w})`;
+}
+
+document.querySelectorAll("[data-k]").forEach(el => {
+  const k = el.dataset.k;
+  if (el.type === "checkbox") {
+    el.checked = !!state[k];
+    el.closest(".mark").classList.toggle("on", el.checked);
+    el.addEventListener("change", () => {
+      state[k] = el.checked; el.closest(".mark").classList.toggle("on", el.checked); save();
+    });
+  } else {
+    el.value = state[k] || "";
+    if (el.type === "date") {
+      showDate(el);
+      el.addEventListener("click", () => { try { el.showPicker(); } catch (e) {} });
+      el.addEventListener("change", () => { state[k] = el.value; showDate(el); save(); });
+    } else {
+      el.addEventListener("input", () => { state[k] = el.value; save(); });
+    }
+  }
+});
+
+function fit(t) { t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }
+const fitAll = () => document.querySelectorAll("td textarea").forEach(fit);
+document.querySelectorAll("td textarea").forEach(t => t.addEventListener("input", () => fit(t)));
+fitAll();
+window.addEventListener("load", fitAll);
+window.addEventListener("resize", fitAll);
+window.addEventListener("beforeprint", fitAll);
+
+/* 確認ダイアログは使えないため、ボタンを2段階にする */
+const clearBtn = document.getElementById("clear"), msg = document.getElementById("msg");
+let armed = null;
+clearBtn.addEventListener("click", () => {
+  if (!armed) {
+    clearBtn.textContent = "本当に消す"; clearBtn.className = "warn";
+    msg.textContent = "もう一度押すと、入力内容がすべて消えます。";
+    armed = setTimeout(reset, 4000);
+    return;
+  }
+  state = {}; save(); location.reload();
+});
+function reset() {
+  clearTimeout(armed); armed = null;
+  clearBtn.textContent = "全部消す"; clearBtn.className = "ghost";
+  msg.textContent = "入力内容はこの端末のブラウザに自動保存されます。";
+}
+</script>
+</body>
+</html>
